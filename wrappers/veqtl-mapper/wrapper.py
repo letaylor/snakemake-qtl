@@ -31,7 +31,7 @@ else:
     params = dict(snakemake.params.items())
     
     window = params.get("window", "1000000") # cis window default = 1Mb
-    cmd = '%s --window %s' % (cmd, snakemake.params['window'])
+    cmd = '%s --window %s' % (cmd, window)
     
     if 'other_settings' in params:
         cmd = '%s %s' % (cmd, snakemake.params['other_settings'])
