@@ -7,20 +7,20 @@ Snakemake QTL pipeline
 Snakemake pipeline for molecular trait QTL mapping
 """
 
-__version__ = '0.1.4.dev0'
+__version__ = '0.1.4'
 
-rule all:
+rule all_qtl:
     input:
         # QTLtools nominal associations
         'qtltools_nominal.tsv.gz',
         
         # QTLtools permutation associations
         'qtltools_permute.tsv.gz',
-        'plots/qtltools_permute-check_beta_approx.png', 
-        
+        'plots/qtltools_permute-check_beta_approx.png',
+
         # QTLtools conditional associations
-        'qtltools_conditional.tsv.gz', 
-        
+        'qtltools_conditional.tsv.gz',
+
         # veqtl-mapper variance qtls
         'vqtlmapper_permute-top_qtl.tsv.gz'
 
@@ -34,6 +34,8 @@ rule qtltools_prep__vcf:
         'data/genotypes.vcf.gz'
     output:
         'data/genotypes.vcf.gz.tbi'
+    singularity:
+        config['DOCKER']
     shell:
         'tabix {input}'
 
@@ -44,6 +46,8 @@ rule qtltools_prep__bed:
     """
     input:
         'data/moltraits.bed.gz'
+    singularity:
+        config['DOCKER']
     output:
         'data/moltraits.bed.gz.tbi'
     shell:
@@ -52,9 +56,9 @@ rule qtltools_prep__bed:
 
 
 # QTLtools: nominal pass #######################################################
-rule qtltools_cis__nominal:
+rule qtltools_proximal__nominal:
     """
-    QTLtools:   nominal cis mapping (association with all variants)
+    QTLtools:   nominal proximal mapping (association with all variants)
     """
     input:
         geno='data/genotypes.vcf.gz',
@@ -62,24 +66,25 @@ rule qtltools_cis__nominal:
         pheno='data/moltraits.bed.gz',
         pheno_tbi='data/moltraits.bed.gz.tbi'
     output:
-        'swarm_qtltools_nominal/qtltools_nominal-{j_cur}_{j_total}.txt'
+        temp('swarm_qtltools_nominal/qtltools_nominal-{j_cur}_{j_total}.txt')
+    singularity:
+        config['DOCKER']
     params:
-        options=config['OPTIONS_QTLTOOLS']
-    run:
-        shell(
-            'QTLtools cis --vcf {input.geno} --bed {input.pheno} '
-                '--nominal 1 ' # nominal p-value cutoff to threshold output  
-                '--normal ' # force the input phenotype to N(0, 1) 
-                '--seed 15112011 ' # seed for random number generator
-                '--window 1000000 ' # window size. default = 1Mb
-                '--chunk {wildcards.j_cur} {wildcards.j_total} ' # for swarming
-                '{params.options} ' # options from config
-                '--out {output}'
-        )
+        other_param=config['PARAM_QTLTOOLS'],
+        nominal_cutoff=config['PARAM_QTLTOOLS_NOMINAL_CUTOFF']
+    shell:
+        'QTLtools cis --vcf {input.geno} --bed {input.pheno} '
+            '--nominal {params.nominal_cutoff} ' 
+            '--normal ' # force the input phenotype to N(0, 1) 
+            '--seed 15112011 ' # seed for random number generator
+            '--window 1000000 ' # window size. default = 1Mb
+            '--chunk {wildcards.j_cur} {wildcards.j_total} ' # for swarming
+            '{params.other_param} ' # PARAM from config
+            '--out {output}'
 
-rule qtltools_cis__nominal_concat:
+rule qtltools_proximal__nominal_concat:
     """
-    QTLtools: swarm cis mapping & combine the output
+    QTLtools: swarm proximal mapping & combine the output
     
     Notes:
     - 1 based so first iteration is 1 not 0.
@@ -93,31 +98,29 @@ rule qtltools_cis__nominal_concat:
         )
     output:
         'qtltools_nominal.tsv.gz'
-    run:
+    shell:
         # add the header to the output file
-        shell(
-            'echo "pheno_id '
-                'pheno_chr pheno_start pheno_end pheno_strand '
-                'n_cis_var pheno_var_dist '
-                'var_id var_chr var_start var_end '
-                'p_nominal beta top_cis_var" | '
-            'sed s/" "/"\t"/g | gzip -c > {output}'
-        )
+        'echo "pheno_id '
+            'pheno_chr pheno_start pheno_end pheno_strand '
+            'n_proximal_var pheno_var_dist '
+            'var_id var_chr var_start var_end '
+            'p_nominal beta top_proximal_var" | '
+        'sed s/" "/"\t"/g | gzip -c > {output}; '
             
         # cat swarm files to make the output file
-        shell('cat {input} | sed s/" "/"\t"/g | gzip -c >> {output}')
+        'cat {input} | sed s/" "/"\t"/g | gzip -c >> {output}; '
         
         # remove the temp files and swarm directory
-        shell('rm {input}')
-        shell('rm -r swarm_qtltools_nominal')
+        #'rm {input}; ' # no need to by defining temp() in previous rule
+        'rm -r swarm_qtltools_nominal; '
 ################################################################################
 
 
 # QTLtools: permute pass #######################################################
-rule qtltools_cis__permute:
+rule qtltools_proximal__permute:
     """
-    QTLtools:   cis mapping where genotypes are permuted and top cis variant
-                returned
+    QTLtools:   proximal mapping where genotypes are permuted and top proximal 
+                variant returned
                 
     Notes:
     - only cases where the first qtl is < threshold are in the output
@@ -128,25 +131,26 @@ rule qtltools_cis__permute:
         pheno='data/moltraits.bed.gz',
         pheno_tbi='data/moltraits.bed.gz.tbi'
     output:
-        'swarm_qtltools_permute/qtltools_permute-{j_cur}_{j_total}.txt'
+        temp('swarm_qtltools_permute/qtltools_permute-{j_cur}_{j_total}.txt')
+    singularity:
+        config['DOCKER']
     params:
-        options=config['OPTIONS_QTLTOOLS'],
-	n_perm=config['NPERM']
-    run:
-        shell(
-            'QTLtools cis --vcf {input.geno} --bed {input.pheno} '
-                '--permute {params.n_perm} ' # qtltools not have adaptive perm
-                '--normal ' # force the input phenotype to N(0, 1) 
-                '--seed 15112011 ' # seed for random number generator
-                '--window 1000000 ' # window size. default = 1Mb
-                '--chunk {wildcards.j_cur} {wildcards.j_total} ' # for swarming
-                '{params.options} ' # options from config
-                '--out {output}'
-        )
+        other_param=config['PARAM_QTLTOOLS'],
+        n_perm=config['NPERM']
+    shell:
+        'QTLtools cis --vcf {input.geno} --bed {input.pheno} '
+            '--permute {params.n_perm} ' # qtltools not have adaptive perm
+            '--normal ' # force the input phenotype to N(0, 1) 
+            '--seed 15112011 ' # seed for random number generator
+            '--window 1000000 ' # window size. default = 1Mb
+            '--chunk {wildcards.j_cur} {wildcards.j_total} ' # for swarming
+            '{params.other_param} ' # PARAM from config
+            '--out {output}'
 
-rule qtltools_cis__permute_concat:
+
+rule qtltools_proximal__permute_concat:
     """
-    QTLtools:   swarm cis mapping & combine the output
+    QTLtools:   swarm proximal mapping & combine the output
     
     Notes:
     - 1 based so first iteration is 1 not 0.
@@ -160,29 +164,27 @@ rule qtltools_cis__permute_concat:
         )
     output:
         'qtltools_permute.tsv.gz'
-    run:
-        # add the header to the output file
-        shell(
-            'echo "pheno_id '
-                'pheno_chr pheno_start pheno_end pheno_strand '
-                'n_cis_var pheno_var_dist '
-                'var_id var_chr var_start var_end '
-                'p_degree_freedom '
-                'dummy '
-                'beta_dist_par1 beta_dist_par2 '
-                'p_nominal beta '
-                'p_empirical p_adjust_beta_dist" | '
-            'sed s/" "/"\t"/g | gzip -c > {output}'
-        )
+    shell:
+        # add the header to the output file        
+        'echo "pheno_id '
+            'pheno_chr pheno_start pheno_end pheno_strand '
+            'n_proximal_var pheno_var_dist '
+            'var_id var_chr var_start var_end '
+            'p_degree_freedom '
+            'dummy '
+            'beta_dist_par1 beta_dist_par2 '
+            'p_nominal beta '
+            'p_empirical p_adjust_beta_dist" | '
+        'sed s/" "/"\t"/g | gzip -c > {output}; '
             
         # cat swarm files to make the output file
-        shell('cat {input} | sed s/" "/"\t"/g | gzip -c >> {output}')
+        'cat {input} | sed s/" "/"\t"/g | gzip -c >> {output}; '
         
         # remove the temp swarm directory
-        shell('rm {input}')
-        shell('rm -r swarm_qtltools_permute')
+        #'rm {input}; '
+        'rm -r swarm_qtltools_permute; '
 
-rule qtltools_cis__permute_fdr:
+rule qtltools_proximal__permute_fdr:
     """
     QTLtools:   run the FDR script for the permuted data
     """
@@ -191,27 +193,31 @@ rule qtltools_cis__permute_fdr:
     output:
         'qtltools_permute-significant.tsv.gz',
         'qtltools_permute-thresholds.txt.gz'
+    singularity:
+        config['DOCKER']
     params:
         shell_script=srcdir('scripts/qtltools-runFDR_cis.R')
     shell:
         'Rscript {params.shell_script} {input} 0.05 `basename {input} .tsv.gz`'
 
-rule qtltools_cis__plot__check_beta_approx:
+rule qtltools_proximal__plot__check_beta_approx:
     input:
         'qtltools_permute.tsv.gz'
     output:
         'plots/qtltools_permute-check_beta_approx.png',
         'plots/qtltools_permute-check_beta_approx-neglog10.png'
+    singularity:
+        config['DOCKER']
     params:
         shell_script=srcdir('scripts/qtltools-check_beta_approx.R')
     shell:
         'Rscript {params.shell_script} {input} '
-        'plots/`basename {input} .tsv.gz`-check_beta_approx'
+            'plots/`basename {input} .tsv.gz`-check_beta_approx'
 ################################################################################
 
 
 # QTLtools: conditional pass ###################################################
-rule qtltools_cis__conditional_unzip_threshold:
+rule qtltools_proximal__conditional_unzip_threshold:
     """
     QTLtools requires uncompressed thresholds file.
     """
@@ -219,12 +225,12 @@ rule qtltools_cis__conditional_unzip_threshold:
         'qtltools_permute-thresholds.txt.gz'
     output:
         'qtltools_permute-thresholds.txt'
-    run:
-        shell('gunzip -c {input} > {output}')
+    shell:
+        'gunzip -c {input} > {output}'
         
-rule qtltools_cis__conditional:
+rule qtltools_proximal__conditional:
     """
-    QTLtools:   conditional cis mapping using thresholds from permuted data
+    QTLtools:   conditional proximal mapping using thresholds from permuted data
     """
     input:
         geno='data/genotypes.vcf.gz',
@@ -233,24 +239,24 @@ rule qtltools_cis__conditional:
         pheno_tbi='data/moltraits.bed.gz.tbi',
         pheno_thresh='qtltools_permute-thresholds.txt'
     output:
-        'swarm_qtltools_conditional/qtltools_conditional-{j_cur}_{j_total}.txt'
+        temp('swarm_qtltools_conditional/qtltools_conditional-{j_cur}_{j_total}.txt')
+    singularity:
+        config['DOCKER']
     params:
-        options=config['OPTIONS_QTLTOOLS']
-    run:
-        shell(
-            'QTLtools cis --vcf {input.geno} --bed {input.pheno} '
-                '--mapping {input.pheno_thresh} ' # thresholds
-                '--normal ' # force the input phenotype to N(0, 1) 
-                '--seed 15112011 ' # seed for random number generator
-                '--window 1000000 ' # window size. default = 1Mb
-                '--chunk {wildcards.j_cur} {wildcards.j_total} ' # for swarming
-                '{params.options} ' # options from config 
-                '--out {output}'
-        )
+        other_param=config['PARAM_QTLTOOLS']
+    shell:
+        'QTLtools cis --vcf {input.geno} --bed {input.pheno} '
+            '--mapping {input.pheno_thresh} ' # thresholds
+            '--normal ' # force the input phenotype to N(0, 1) 
+            '--seed 15112011 ' # seed for random number generator
+            '--window 1000000 ' # window size. default = 1Mb
+            '--chunk {wildcards.j_cur} {wildcards.j_total} ' # for swarming
+            '{params.other_param} ' # PARAM from config 
+            '--out {output}'
 
-rule qtltools_cis__conditional_concat:
+rule qtltools_proximal__conditional_concat:
     """
-    QTLtools:   swarm cis mapping & combine the output
+    QTLtools:   swarm proximal mapping & combine the output
     
     Notes:
     - 1 based so first iteration is 1 not 0.
@@ -264,33 +270,31 @@ rule qtltools_cis__conditional_concat:
         )
     output:
         'qtltools_conditional.tsv.gz'
-    run:
-        # add the header to the output file
-        shell(
-            'echo "pheno_id '
-                'pheno_chr pheno_start pheno_end pheno_strand '
-                'n_cis_var pheno_var_dist '
-                'var_id var_chr var_start var_end '
-                'var_rank ' # if variant = 1st best (rank=0), 2nd best (rank=1)
-                'p_nominal_forward beta_forward '
-                'var_top_rank_forward var_p_below_threshold_forward '
-                'p_nominal_backward beta_backward '
-                'var_top_rank_backward var_p_below_threshold_backward" | '
-            'sed s/" "/"\t"/g | gzip -c > qtltools_conditional.tsv.gz'
-        )
+    shell:
+        # add the header to the output file        
+        'echo "pheno_id '
+            'pheno_chr pheno_start pheno_end pheno_strand '
+            'n_proximal_var pheno_var_dist '
+            'var_id var_chr var_start var_end '
+            'var_rank ' # if variant = 1st best (rank=0), 2nd best (rank=1)
+            'p_nominal_forward beta_forward '
+            'var_top_rank_forward var_p_below_threshold_forward '
+            'p_nominal_backward beta_backward '
+            'var_top_rank_backward var_p_below_threshold_backward" | '
+        'sed s/" "/"\t"/g | gzip -c > qtltools_conditional.tsv.gz; '
+        
         
         # cat swarm files to make the output file
-        shell(
-            'cat {input} | sed s/" "/"\t"/g | '
-            'gzip -c >> qtltools_conditional.tsv.gz'
-        )
+        'cat {input} | sed s/" "/"\t"/g | '
+            'gzip -c >> qtltools_conditional.tsv.gz; '
+        
         
         # compress the thresholds file
-        shell('gzip -f qtltools_permute-thresholds.txt')
+        'gzip -f qtltools_permute-thresholds.txt; '
         
         # remove the temp swarm directory
-        shell('rm {input}')
-        shell('rm -r swarm_qtltools_conditional')
+        #'rm {input}; '
+        'rm -r swarm_qtltools_conditional; '
 ################################################################################
 
 
@@ -304,6 +308,8 @@ rule vqtlmapper_prep__bed_gz:
         'data/moltraits.bed.gz'
     output:
         'data/moltraits-fastqtl.bed.gz'
+    singularity:
+        config['DOCKER']
     shell:
         'gunzip -c {input} | cut -f 1-4,7- | bgzip -c > '   
             'data/moltraits-fastqtl.bed.gz; '
@@ -329,6 +335,8 @@ rule vqtlmapper_prep__bed_tabix:
         'data/moltraits-fastqtl.bed.gz'
     output:
         'data/moltraits-fastqtl.bed.gz.tbi'
+    singularity:
+        config['DOCKER']
     shell:
         'tabix {input}'
 ################################################################################
@@ -343,7 +351,9 @@ rule vqtlmapper__permute:
         geno_tbi='data/genotypes.vcf.gz.tbi',
         pheno='data/moltraits-fastqtl.bed'
     output:
-        'swarm_vqtl_permute/vqtl_permute-{j_cur}_{j_total}.txt'
+        temp('swarm_vqtl_permute/vqtl_permute-{j_cur}_{j_total}.txt')
+    singularity:
+        config['DOCKER']
     params:
         perm=config['NPERM'],
         seed='15112011',
@@ -354,12 +364,12 @@ rule vqtlmapper__permute:
 
 rule vqtlmapper__permute_concat:
     """
-    vqtl-mapper:   swarm cis mapping & combine the output
+    vqtl-mapper:   swarm proximal mapping & combine the output
     
     Notes:
     - 1 based so first iteration is 1 not 0.
     - removes the temp input data
-    - corrected for multiple testing across cis variants per feature
+    - corrected for multiple testing across proximal variants per feature
     """
     input:
         expand('swarm_vqtl_permute/vqtl_permute-{j_cur}_{j_total}.txt',
@@ -367,19 +377,17 @@ rule vqtlmapper__permute_concat:
             j_total=config['NJOBS_PERMUTE'])
     output:
         'vqtlmapper_permute.tsv.gz'
-    run:            
+    shell:            
         # cat swarm files to make the output file
-        shell(
-            'awk "FNR>1||NR==1" {input} | sed s/"GENE"/"pheno_id"/ | '
-            'gzip -c > {output}'
-        )
+        'awk "FNR>1||NR==1" {input} | sed s/"GENE"/"pheno_id"/ | '
+            'gzip -c > {output}; '
         
         # remove the temp swarm directory
-        shell('rm {input}')
-        shell('rm -r swarm_vqtl_permute')
+        #'rm {input}; '
+        'rm -r swarm_vqtl_permute; '
         
         # remove the temporary bed file (we already have gzipped copy)
-        shell('rm data/moltraits-fastqtl.bed')
+        'rm data/moltraits-fastqtl.bed; '
         
 rule vqtlmapper__top_snp:
     """
@@ -390,15 +398,15 @@ rule vqtlmapper__top_snp:
         'vqtlmapper_permute.tsv.gz'
     output:
         'vqtlmapper_permute-top_qtl.tsv.gz'
+    singularity:
+        config['DOCKER']
     params:
-        script_tophit=srcdir('scripts/general-min_line_per_feature.R'),
-        script_fdr=srcdir('scripts/general-storey_fdr.R')
-    run:
+        script_tophit=srcdir('../scripts/general-min_line_per_feature.R'),
+        script_fdr=srcdir('../scripts/general-storey_fdr.R')
+    shell:
         # extract the most significant association for each mol. trait
-        shell(
-            'Rscript {params.script_tophit} '
-                '--file {input} --id_column pheno_id --value_column P | '
+        'Rscript {params.script_tophit} '
+            '--file {input} --id_column pheno_id --value_column P | '
             'Rscript {params.script_fdr} --column BETA --out_column q_beta | '
             'gzip -c > {output}'
-        )
 ################################################################################

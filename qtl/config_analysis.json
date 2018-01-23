@@ -1,0 +1,15 @@
+{
+    # Docker image - by default used by singularity (--use-singularity)
+    "DOCKER" : "docker://letaylor/moltraits",
+    
+    # general settings
+    "NJOBS_NOMINAL" : 10,
+    "NJOBS_PERMUTE" : 30,
+    "NJOBS_CONDITIONAL" : 10,
+    "NPERM" : 1000,
+    
+    # QTLtools settings
+    "PARAM_QTLTOOLS" : "--cov data/covariates.txt.gz",
+    "PARAM_QTLTOOLS_NOMINAL_CUTOFF" : 1
+    #"PARAM_QTLTOOLS" : ""
+}

@@ -1,17 +1,19 @@
 {
+    # default settings for job on LSF cluster
     "__default__" :
     {
-        "group"     : "/tlrdl/fusion",
-        #"queue"     : "research-rh7",
-        "memory"    : 15, # in Gb
+        "group"     : "/tlrdl/fusion", # user should change this
+        #"queue"     : "research-rh7", # optional: specify queue to submit to
+        "memory"    : 15, # all jobs default to 15 in Gb
         #"resources" : "\"select[mem>15000] rusage[mem=15000] span[hosts=1]\"",
         "name"      : "snkmk.{rule}.{wildcards}",
         "output"    : "logs/cluster/{rule}/snkmk.{wildcards}.o",
         "error"     : "logs/cluster/{rule}/snkmk.{wildcards}.e"
     },
     
+    # settings for rules in QTLtools module
     "vqtlmapper__top_snp" :
     {
-        "memory"    : 40  # in Gb
+        "memory"    : 40  # vqtlmapper__top_snp uses 40 Gb
     }
 }

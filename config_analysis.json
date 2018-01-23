@@ -1,8 +1,0 @@
-{
-    "NJOBS_NOMINAL" : 10,
-    "NJOBS_PERMUTE" : 30,
-    "NJOBS_CONDITIONAL" : 10,
-    "NPERM" : 1000,
-    "OPTIONS_QTLTOOLS" : "--cov data/covariates.txt.gz"
-    #"OPTIONS_QTLTOOLS" : ""
-}

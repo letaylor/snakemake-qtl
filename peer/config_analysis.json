@@ -1,0 +1,23 @@
+{
+    # Docker image - by default used by singularity (--use-singularity)
+    "DOCKER" : "docker://letaylor/moltraits",
+    
+    # PEER settings
+    # PEER settings for demo
+    "PEER_FACTORS" : ["1","2"],
+    "PARAM_PEER" : "--iterations 1 --account_mean FALSE --inverse_norm TRUE --covariate_file data/covariates.tsv.gz",
+    "PARAM_PEER_QTLTOOLS_SINGULARITY" : True, # singularity for QTLtools call
+    # suggested PEER settings for run-time
+    #"PEER_FACTORS" : ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "15", "20", "30", "40", "50", "60", "70", "80", "90", "100"],
+    #"PARAM_PEER" : "--iterations 1000 --account_mean FALSE --inverse_norm TRUE --covariate_file data/covariates.tsv.gz",
+    
+    
+    # QTLtools settings
+    "NJOBS_NOMINAL" : 10,
+    "NJOBS_PERMUTE" : 30,
+    "NJOBS_CONDITIONAL" : 10,
+    "NPERM" : 100, # set low permute because using beta dist 
+    "PARAM_QTLTOOLS" : "", # no covariates for qtl mapping because done in PEER
+    "PARAM_QTLTOOLS_NOMINAL_CUTOFF" : 0.05,
+    "PARAM_QTLTOOLS_SWARM" : False # if True, will swarm QTL mapping
+}
