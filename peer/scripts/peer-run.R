@@ -40,7 +40,7 @@ peer_model = function(mtrx, k, iterations, base, other_dat=NULL,
   # Set observed data
   PEER_setPhenoMean(model, mtrx)
   
-  # set number of hidden confounderks
+  # set number of hidden factors
   PEER_setNk(model, k)
   if (k > 0) {
       factor_names = paste("factor", seq(1,k), sep="_")
@@ -49,7 +49,7 @@ peer_model = function(mtrx, k, iterations, base, other_dat=NULL,
       factor_names = c()
       factor_names_full = c()
   }
-  print(paste("PEER_confounders=", (k), sep=""))
+  print(paste("PEER_factors=", (k), sep=""))
   
   # set number of max iterations
   PEER_setNmax_iterations(model, iterations)
@@ -77,7 +77,7 @@ peer_model = function(mtrx, k, iterations, base, other_dat=NULL,
   # aka now run peer
   PEER_update(model)
   
-  # get the posterior mean of the inferred confounders (NxK matrix),
+  # get the posterior mean of the inferred factors (NxK matrix),
   # their weights (GxK matrix),
   # precision (inverse variance) of the weights (Kx1 matrix),
   # the residual dataset (NxG matrix):
@@ -199,7 +199,7 @@ run_peer = function() {
       )
     ),
     
-    make_option(c("-k", "--hidden_confounders"), 
+    make_option(c("-k", "--hidden_factors"), 
       type="numeric", default=15, 
       help="The number of hidden factors. [default %default]"
     ),
@@ -297,6 +297,7 @@ run_peer = function() {
   
   rownames(dat) = paste("row", seq(1,nrow(dat)), sep="_")
   dat_mtx = dat[,sample_ids]
+  dat_mtx = t(dat_mtx)
   dat_other = dat[,other_cols]
   
   
@@ -314,19 +315,19 @@ run_peer = function() {
       print(sample_ids[!(sample_ids %in% colnames(covariates_mtx))])
       stop()
     }
-    covariates_mtx = as.matrix(covariates_mtx[,sample_ids])
+    covariates_mtx = t(as.matrix(covariates_mtx[,sample_ids]))
   } else {
     covariates_mtx=NULL
   }
   
   
   # run peer
-  peer_model(t(dat_mtx),
-             arguments$options$hidden_confounders,
+  peer_model(dat_mtx,
+             arguments$options$hidden_factors,
              arguments$options$iterations,
              arguments$options$output_prefix,
              dat_other,
-             t(covariates_mtx),
+             covariates_mtx,
              arguments$options$account_mean,
              arguments$options$inverse_norm)
   

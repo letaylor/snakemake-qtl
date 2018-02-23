@@ -58,7 +58,7 @@ rule peer__run:
         'Rscript {params.script_peer} '
             '--file {input.pheno} '
             '--sample_column_start 7 '
-            '--hidden_confounders {wildcards.k} '
+            '--hidden_factors {wildcards.k} '
             '--output_prefix peer_runs/factor_{wildcards.k}/moltraits ' 
             '{params.PARAM}' # PARAM from config
 ################################################################################
