@@ -99,3 +99,6 @@ docs/_build/
 
 # PyBuilder
 target/
+
+# Snakemake
+*.snakemake*.py

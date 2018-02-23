@@ -1,0 +1,330 @@
+#!/usr/bin/env snakemake
+
+"""
+Snakemake PEER pipeline
+=======================
+
+Snakemake pipeline for latent factor analysis using PEER.
+"""
+
+__version__ = '0.1.0.01'
+
+# use the qtl/Snakefile::qtltools_prep__vcf rule for the 
+# peer/Snakefile::qtltools__prep_vcf rule
+include: srcdir('../qtl/Snakefile') 
+
+rule all_peer:
+    input:
+        # run peer
+        expand(
+            'peer_runs/factor_{k}/moltraits-peer_factors.tsv.gz', 
+            k=config['PEER_FACTORS']
+        ),
+        
+        # OPTIONAL
+        # get molecular features with a significant QTL over various numbers 
+        # of PEER factors to calculate the optimal number of PEER factors for
+        # QTL mapping
+        'peer_factors-qtltools_permute-significant-summary.tsv.gz',
+        
+        # OPTIONAL
+        # get the number of nominally significant (p-value <= 0.05) QTLs over 
+        # various numbers of PEER factors to calculate the optimal number of
+        # PEER factors for QTL mapping
+        # Note: this method does not correct for number of tests
+        'peer_factors-qtltools_nominal-summary.tsv.gz'
+
+
+# PEER #########################################################################
+rule peer__run:
+    """
+    QTLtools:   nominal cis mapping (association with all variants)
+    """
+    input:
+        pheno='data/moltraits.bed.gz',
+    output:
+        'peer_runs/factor_{k}/moltraits-peer_factors.tsv.gz',
+        'peer_runs/factor_{k}/moltraits-peer_weights.tsv.gz',
+        'peer_runs/factor_{k}/moltraits-peer_precision.tsv.gz',
+        'peer_runs/factor_{k}/moltraits-peer_residuals.tsv.gz',
+        'peer_runs/factor_{k}/moltraits-peer_residuals-invnorm.tsv.gz'
+    singularity:
+        config['DOCKER']
+    params:
+        script_peer=srcdir('scripts/peer-run.R'),
+        PARAM=config['PARAM_PEER']
+    shell:
+        # run peer
+        'Rscript {params.script_peer} '
+            '--file {input.pheno} '
+            '--sample_column_start 7 '
+            '--hidden_confounders {wildcards.k} '
+            '--output_prefix peer_runs/factor_{wildcards.k}/moltraits ' 
+            '{params.PARAM}' # PARAM from config
+################################################################################
+
+# QTLtools: prep ###############################################################
+rule qtltools__prep_vcf:
+    """
+    Symlink vcf file in each PEER factor directory. 
+    
+    Input:
+        data/genotypes.vcf.gz = expected to be provided by use
+        data/genotypes.vcf.gz.tbi = can be generated using qtltools_prep__vcf 
+            method from ../qtl/Snakefile
+    """
+    input:
+        'data/genotypes.vcf.gz', 
+        'data/genotypes.vcf.gz.tbi'
+    output:
+        'peer_runs/factor_{k}/data/genotypes.vcf.gz',
+        'peer_runs/factor_{k}/data/genotypes.vcf.gz.tbi'
+    shell:
+        'for i in {input}; do '
+            'out_i=`basename $i`; '
+            'in_i=`realpath $i`; '
+            'ln -s $in_i peer_runs/factor_{wildcards.k}/data/$out_i; '
+        'done'
+
+
+rule qtltools__moltraits_bed:
+    """
+    Convert tsv to bed 
+    """
+    input:
+        'peer_runs/factor_{k}/moltraits-peer_residuals-invnorm.tsv.gz'
+    output:
+        'peer_runs/factor_{k}/moltraits-peer_residuals-invnorm.bed.gz'
+    singularity:
+        config['DOCKER']
+    params:
+        script_awksort=srcdir('../scripts/general-sort_bed_with_header.awk')
+    shell:
+        'gunzip -c {input} | sed 0,/"chr"/s//"#chr"/ | '
+            '{params.script_awksort} | bgzip -c > {output}'
+
+
+rule qtltools__prep_moltraits:
+    """
+    Symlink bed file in each PEER factor directory 
+    """
+    input:
+        'peer_runs/factor_{k}/moltraits-peer_residuals-invnorm.bed.gz'
+    output:
+        'peer_runs/factor_{k}/data/moltraits.bed.gz'
+    shell:
+        'ln -s `realpath {input}` {output}'
+
+
+rule qtltools__prep_analysis_config:
+    """
+    Symlink analysis config file in each PEER factor directory
+    """
+    input:
+        'config_analysis.json'
+    output:
+        'peer_runs/factor_{k}/config_analysis.json'
+    shell:
+        'ln -s `realpath {input}` {output}'
+
+
+rule qtltools__prep_cluster_config:
+    """
+    Symlink cluster config file in each PEER factor directory
+    """
+    input:
+        'config_cluster.json'
+    output:
+        'peer_runs/factor_{k}/config_cluster.json'
+    shell:
+        'ln -s `realpath {input}` {output}'
+
+
+rule qtltools__in_subdir_clean_logs:
+    """
+    Clears logs for each PEER factor iteration
+    """
+    shell:
+        'rm -r peer_runs/factor_*/logs/'
+################################################################################
+
+# QTLtools: perm ###############################################################
+rule qtltools__perm_in_subdir:
+    """
+    Run QTLtools from within each PEER factor directory by cd into the PEER
+    factor directory, loading the QTLtools Snakemake file, and calling the
+    qtltools_proximal__permute_fdr function within the Snakemake file (which 
+    generates the qtltools_permute-significant.tsv.gz output file).
+    """
+    input:
+        geno='peer_runs/factor_{k}/data/genotypes.vcf.gz',
+        pheno='peer_runs/factor_{k}/data/moltraits.bed.gz', 
+        config_analysis='peer_runs/factor_{k}/config_analysis.json',
+        config_cluster='peer_runs/factor_{k}/config_cluster.json'
+    output:
+        'peer_runs/factor_{k}/qtltools_permute-significant.tsv.gz'
+    params:
+        script_snakefile=srcdir('../qtl/Snakefile'),
+        script_cluster_submit=srcdir('../wrappers/cluster/lsf.py')
+    run:
+        cmd = 'cd peer_runs/factor_{wildcards.k}; '
+        cmd = '%s config_analysis=`basename {input.config_analysis}`; ' % cmd
+        if config['PARAM_QTLTOOLS_SWARM']:
+            cmd = '%s config_cluster=`basename {input.config_cluster}`; ' % cmd
+        
+        cmd = '%s snakemake qtltools_proximal__permute_fdr  ' % cmd
+        cmd = '%s --snakefile {params.script_snakefile}  ' % cmd
+        cmd = '%s --configfile $config_analysis --printshellcmds ' % cmd
+        if config['PARAM_QTLTOOLS_SWARM']:
+            cmd = '%s --latency-wait 600 --jobs 999 ' % cmd
+            cmd = '%s --cluster-config $config_cluster ' % cmd
+            cmd = '%s --cluster {params.script_cluster_submit} ' % cmd
+        
+        if config['PARAM_PEER_QTLTOOLS_SINGULARITY']:
+            cmd = '%s --use-singularity ' % cmd
+        
+        shell(cmd)
+
+
+rule qtltools__sum_perm_in_subdir:
+    """
+    Summarize the number of molecular trait features with a significant QTL 
+    (FDR 5% and 1%) for each PEER factor run.
+    """
+    input:
+        'peer_runs/factor_{k}/qtltools_permute-significant.tsv.gz'
+    output:
+        'peer_runs/factor_{k}/qtltools_permute-significant-summary.tsv'
+    shell:
+        # count the number of hits at an FDR of 0.05 and 0.01. 
+        # note from the QTLtools perm output, column 20 == qval
+        'hits=`gunzip -c {input} | '
+            'awk \'{{ if ($20<=0.05) print $1"\t"$20}}\' | wc -l`; '
+        'echo -e "{wildcards.k}\t0.05\t$hits" > {output}; '
+        'hits=`gunzip -c {input} | '
+            'awk \'{{ if ($20<=0.01) print $1"\t"$20}}\' | wc -l`; '
+        'echo -e "{wildcards.k}\t0.01\t$hits" >> {output}; '
+
+
+rule qtltools__optimize_perm:
+    """
+    Summarize the number of molecular trait features with a significant QTL 
+    (FDR 5% and 1%) across all PEER factor runs.
+    """
+    input:
+        expand(
+            'peer_runs/factor_{k}/qtltools_permute-significant-summary.tsv',
+            k=config['PEER_FACTORS']
+        )
+    output:
+        out_file='peer_factors-qtltools_permute-significant-summary.tsv.gz', 
+        out_plot='peer_factors-qtltools_permute-significant-summary.pdf'
+    singularity:
+        config['DOCKER']
+    params:
+        script_optimize=srcdir('scripts/peer-optimize_factors_qtltools.R')
+    shell:
+        # generate the output file
+        'echo -e "peer_factors\tfdr\tn" > {output.out_file}.tmp; '
+        'cat {input} >> {output.out_file}.tmp; '
+        'gzip -c {output.out_file}.tmp > {output.out_file}; '
+        'rm {output.out_file}.tmp; '
+        
+        # plot the output file
+        'Rscript {params.script_optimize} '
+            '--file {output.out_file} '
+            '--y_axis_label "Molecular traits with a QTL" '
+            '--out_file `basename {output.out_plot} .pdf`; '
+################################################################################
+
+# QTLtools: nominal ############################################################
+rule qtltools__nominal_in_subdir:
+    """
+    Run QTLtools from within each PEER factor directory by cd into the PEER
+    factor directory, loading the QTLtools Snakemake file, and calling the
+    qtltools_proximal__nominal_concat function within the Snakemake file (which 
+    generates the qtltools_nominal.tsv.gz output file).
+    """
+    input:
+        geno='peer_runs/factor_{k}/data/genotypes.vcf.gz',
+        pheno='peer_runs/factor_{k}/data/moltraits.bed.gz', 
+        config_analysis='peer_runs/factor_{k}/config_analysis.json',
+        config_cluster='peer_runs/factor_{k}/config_cluster.json'
+    output:
+        'peer_runs/factor_{k}/qtltools_nominal.tsv.gz'
+    params:
+        script_snakefile=srcdir('../qtl/Snakefile'),
+        script_cluster_submit=srcdir('../wrappers/cluster/lsf.py')
+    run:
+        cmd = 'cd peer_runs/factor_{wildcards.k}; '
+        cmd = '%s config_analysis=`basename {input.config_analysis}`; ' % cmd
+        if config['PARAM_QTLTOOLS_SWARM']:
+            cmd = '%s config_cluster=`basename {input.config_cluster}`; ' % cmd
+        
+        cmd = '%s snakemake qtltools_proximal__nominal_concat  ' % cmd
+        cmd = '%s --snakefile {params.script_snakefile}  ' % cmd
+        cmd = '%s --configfile $config_analysis --printshellcmds ' % cmd
+        if config['PARAM_QTLTOOLS_SWARM']:
+            cmd = '%s --latency-wait 600 --jobs 999 ' % cmd
+            cmd = '%s --cluster-config $config_cluster ' % cmd
+            cmd = '%s --cluster {params.script_cluster_submit} ' % cmd
+        
+        if config['PARAM_PEER_QTLTOOLS_SINGULARITY']:
+            cmd = '%s --use-singularity ' % cmd
+        
+        shell(cmd)
+
+
+rule qtltools__sum_nominal_in_subdir:
+    """
+    Summarize the total number of nominally significant QTLs. 
+    
+    Note: not corrected for number of tests.
+    """
+    input:
+        'peer_runs/factor_{k}/qtltools_nominal.tsv.gz'
+    output:
+        'peer_runs/factor_{k}/qtltools_nominal-summary.tsv'
+    shell:
+        # count the number of hits at an pv <= 0.05 and 0.01. 
+        # note from the QTLtools nominal output, column 12 == p_nominal
+        'hits=`gunzip -c {input} | '
+            'awk \'{{ if ($12<=0.05) print $1"\t"$12}}\' | wc -l`; '
+        'echo -e "{wildcards.k}\t0.05\t$hits" > {output}; '
+        'hits=`gunzip -c {input} | '
+            'awk \'{{ if ($12<=0.01) print $1"\t"$12}}\' | wc -l`; '
+        'echo -e "{wildcards.k}\t0.01\t$hits" >> {output}; '
+
+
+rule qtltools__optimize_nominal:
+    """
+    Summarize the total number of nominally significant QTLs across all PEER 
+    factor runs. 
+    
+    Note: not corrected for number of tests.
+    """
+    input:
+        expand(
+            'peer_runs/factor_{k}/qtltools_nominal-summary.tsv',
+            k=config['PEER_FACTORS']
+        )
+    output:
+        out_file='peer_factors-qtltools_nominal-summary.tsv.gz', 
+        out_plot='peer_factors-qtltools_nominal-summary.pdf'
+    singularity:
+        config['DOCKER']
+    params:
+        script_optimize=srcdir('scripts/peer-optimize_factors_qtltools.R')
+    shell:
+        # generate the output file
+        'echo -e "peer_factors\tp_cut\tn" > {output.out_file}.tmp; '
+        'cat {input} >> {output.out_file}.tmp; '
+        'gzip -c {output.out_file}.tmp > {output.out_file}; '
+        'rm {output.out_file}.tmp; '
+        
+        # plot the output file
+        'Rscript {params.script_optimize} '
+            '--file {output.out_file} '
+            '--y_axis_label "Number of QTLs" '
+            '--out_file `basename {output.out_plot} .pdf`; '
+################################################################################

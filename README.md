@@ -1,7 +1,7 @@
-Snakemake QTL pipeline
-======================
+Snakemake molecular trait pipeline
+==================================
 
-Snakemake pipeline for molecular trait QTL mapping.
+Snakemake pipeline for handling molecular traits.
 
 * GitHub repo: https://github.com/letaylor/snakemake-qtl
 * Free software: MIT license
@@ -10,28 +10,17 @@ Snakemake pipeline for molecular trait QTL mapping.
 Overview
 --------
 
-The following tools are used for QTL mapping followed by the operations performed using each tool.
+The workflow is divided into modules. Each module contains a Snakemake file that will execute that analysis chunk. All code specific to a module is housed within the module's directory (e.g., scripts and wrappers). General code that may be used by multiple modules is housed in this directory. In addition, this directory houses the data subdirectory which contains data for minimal examples that may be referenced by multiple modules. Each module is tracked with a version at the top of the Snakemake file and in the setup.cfg file.
 
-1. [QTLtools](https://qtltools.github.io/qtltools): map mean QTLs.
-    
-    A. Map nominal associations across all molecular traits (recording every variant tested). 
-    
-    B. Run 10,000 permutations for each molecular trait feature, controlling for FDR. 
-    
-    C. Map conditional QTLs using the thresholds identified for each molecular trait feature.
+1. Latent factor analysis using PEER
 
-2. [veqtl-mapper](https://funpopgen.github.io/veqtl-mapper): map variance QTLs.
-    
-    A. Run 10,000 permutations for each molecular trait feature. Summarize the top QTL per feature.
-    
-    * Papers: [Genetic interactions affecting human gene expression identified by variance association mapping](https://doi.org/10.7554/eLife.01381), [veqtl-mapper: variance association mapping for molecular phenotypes](https://doi.org/10.1093/bioinformatics/btx273)
+2. QTL mapping
 
-Quickstart
-----------
 
-Quick demo shown below. 
+Quick Setup
+-----------
 
-Note that conda environment.yml contains a reproducible environment for most of the tools used in this repository except for QTLtools and veqtl-mapper, as they have not yet been built as a conda package. 
+A quick demo is provided for each module. For instance, see the README file in the qtl module. 
 
 ```bash
 # clone the repo
@@ -40,91 +29,66 @@ git clone https://github.com/letaylor/snakemake-qtl
 # set code base path
 SNK_REPO="`pwd`/snakemake-qtl"
 
-# optional: install environment using conda
-conda env create -n snkmk_qtl --file ${SNK_REPO}/environment.yml
-
-# optional: activate the new conda environment
-source activate snkmk_qtl
-
-# make a directory for a demo
-mkdir snkmk_qtl-demo
-cd snkmk_qtl-demo
-
-# set up the directory with the required data dir
-mkdir data
-ln -s ${SNK_REPO}/data/* data
-
-# set up the config file inside the working dir
-# change json file to fit the analsis
-cp ${SNK_REPO}/config_analysis.json .
-
-# now run snakemake in dryrun
-snakemake --snakefile ${SNK_REPO}/Snakefile --configfile config_analysis.json --dryrun
-
-# now run snakemake
-snakemake --snakefile ${SNK_REPO}/Snakefile --configfile config_analysis.json --printshellcmds
+# run README demo in the qtl module
+# alternatively keep reading for reproducible setup
 ```
 
-The above jobs may take a little while, it would be much faster if we utilized a cluster to run the jobs. 
-
-When running on the cluster, it is best to first start a [tmux](https://github.com/tmux/tmux) session so that the session may be re-attached at a later time point. 
+If you are running jobs on the cluster, it is best to first start a [tmux](https://github.com/tmux/tmux) session so that the session may be re-attached at a later time point. 
 
 ```bash
 # start session
-tmux new -s qtl
+tmux new -s snkmk
 
 # log back into a session
-tmux -a
+tmux -a snkmk
 ```
 
-Below is a demo for LSF, you can easily tweak the config file for other systems.
+
+Reproducibility: Conda   
+----------------------
+
+One option to enhance reproducibility is to install software used via Conda. Note that some software (e.g., QTLtools) will still be missing since they are not currently in a Conda channel.
 
 ```bash
-# set up the config file inside the working dir
-# change json files to fit the system
-cp ${SNK_REPO}/config_cluster_lsf.json config_cluster.json
+# install environment using Conda
+conda env create --name moltraits --file ${SNK_REPO}/environment.yml
 
-# now run snakemake
-snakemake --snakefile ${SNK_REPO}/Snakefile --configfile config_analysis.json --printshellcmds --latency-wait 600 --jobs 999 --cluster-config config_cluster.json --cluster 'bsub -g {cluster.group} -M {cluster.memory} -R {cluster.resources} -J {cluster.name} -oo {cluster.output} -eo {cluster.error}'
-
-# alternatively use the cluster script (which will load settings from the config file)
-snakemake --snakefile ${SNK_REPO}/Snakefile --configfile config_analysis.json --printshellcmds --latency-wait 600 --jobs 999 --cluster-config config_cluster.json --cluster ${SNK_REPO}/wrappers/cluster/lsf.py
+# activate the new Conda environment
+source activate moltraits
 ```
 
-Setup
------
 
-* The pipeline will run once the proper data frames are in the data directory inside the working directory. Use the demo data input files as a guide or see the QTLtools documentation. 
-* Copy the config files in the working directory and change them as required. For instance, change the number of jobs to swarm various steps or change the number of permutations to 10000 (strongly suggested).
+Reproducibility: Docker
+-----------------------
 
+An alternative option is to use a Docker image. One can easily generate a Docker image of all of the software used in this repository (including software missing from a Conda channel) by using the Dockerfile. 
 
-Working directory structure
----------------------------
+```bash
+# build the Docker image using the Dockerfile
+cd ${SNK_REPO}
+docker build -t moltraits .
+```
 
-* **Required input files**: in the data directory.
-* **Final output data**: in the working directory.
-* **Final summary plots**: in the plots directory.
-* **Logs of all jobs**: in the logs directory.
-* **Intermediate files**: currently all intermediate files are in the swarm* directories. These are deleted after the final output file is finished.
+A pre-compiled Docker image is housed on the Docker Cloud. Download and use this Docker image:
 
+```bash
+# download the Docker image 
+docker pull letaylor/moltraits:latest
 
-QTLtools
---------
-
-* QTLtools can run with / without covariates and other options. To change these across all scripts, edit the OPTIONS_QTLTOOLS parameter inside the config_analysis.json file. For instance, if you are using PEER residuals as the molecular trait input file, then then you would not want covariates (OPTIONS_QTLTOOLS=""). However, if you just used PEER to learn factors, you may want to include these factors as covariates in the QTLtools model. You can do that through the OPTIONS_QTLTOOLS parameter (OPTIONS_QTLTOOLS="--cov data/covariates.txt.gz"). Other options could be to select only a subset of samples or molecular traits for analysis (e.g., OPTIONS_QTLTOOLS="--cov data/covariates.txt.gz --include-phenotypes data/moltraits-analyze.txt"). See the QTLtools [documentation](https://qtltools.github.io/qtltools) for various other options.
-
-* If you get an error, some helpful ideas:
-    1. Are there cis variants around the molecular trait (e.g., you may have removed X chr variants from the vcf file and be trying to test for molecular traits on the X chr)? For nominal mapping, 0 cis variants will cause the molecular trait to be missing from the output file. For permutation mapping, the molecular trait will be included in the output but with NA values.
-    
-    2. Re-run a failed job in an interactive shell to see the exact failure. You can find the exact commands used by snakemake by looking at the logs in the /logs/cluster directory. 
-    
-    3. Is there something strange about the failed molecular trait readout (e.g, in the case of a gene, is it even expressed)?
-    
-    4. Finally, QTLtools bins jobs by breaking the chromsome into regions. If too many jobs are submitted and many phenotypes are excluded, you may find issues where a job iteration is linked to a region with no phenotypes. In this case, QTLtools will fail and the snakemake pipeline will not complete.
+# run the Snakemake pipeline through the container
+# the Snakemake command used below is described in the qtl/README.md file
+docker run -t -v ${SNK_REPO}:/SNK_REPO -v $(pwd):/CUR_DIR -e USERID=$UID letaylor/moltraits:latest "snakemake --snakefile /SNK_REPO/qtl/Snakefile --directory /CUR_DIR --configfile /CUR_DIR/config_analysis.json --printshellcmds"
+```
 
 
-veqtl-mapper
-------------
+Reproducibility: Singularity
+----------------------------
 
-* Currently, veqtl-mapper does not support covariates. Therefore, it may be best to run veqtl-mapper on PEER residuals. 
+A final option is to load the above Docker image using Singularity, which is designed for high-performance compute systems. To do so, simply add the --use-singularity flag when calling snakemake as descibed in the other README.md docs (within the different modules).
 
+As an example, see below. Note that the Docker image is specified in the DOCKER variable of the config file (config_analysis.json).
+
+```bash
+# the Snakemake command used below is described in the qtl/README.md file
+snakemake --snakefile ${SNK_REPO}/qtl/Snakefile --configfile config_analysis.json --printshellcmds --use-singularity --singularity-prefix $(pwd)/.snakemake/singularity
+```
