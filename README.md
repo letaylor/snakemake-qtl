@@ -68,10 +68,8 @@ An alternative option is to use a Docker image. One can easily generate a Docker
 cd ${SNK_REPO}
 docker build -t moltraits .
 
-
 # build the Docker image using jupyter-repo2docker 
-# here, one would delete the current Dockerfile 
-# and add the additional install files via postBuild
+# here, one would delete the current Dockerfile and add the additional install files via postBuild
 jupyter-repo2docker --no-build --debug https://github.com/letaylor/snakemake-qtl
 ```
 
