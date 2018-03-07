@@ -3,6 +3,9 @@ FROM continuumio/miniconda3:latest
 # use bash as default shell, rather than sh
 ENV SHELL /bin/bash
 
+# set bash as the default entry point
+ENTRYPOINT [ "/bin/bash", "-c" ]
+
 # set up a user, to avoid running containers as root
 ENV NB_USER container_user
 ENV HOME /home/${NB_USER}
@@ -17,11 +20,11 @@ WORKDIR /tmp
 ENV ENV_FILE https://raw.githubusercontent.com/letaylor/snakemake-qtl/master/environment.yml
 RUN wget ${ENV_FILE} \
     && conda update conda --yes \
-    && conda env create --name container_env --file 'environment.yml' \
+    && conda env create --name container_env --file environment.yml \
     && conda clean --all --yes \
     && conda list --name container_env \
-    #&& echo 'source activate container_env' >> .bashrc \
-    && rm 'environment.yml'
+    && echo 'source activate container_env' >> ${HOME}/.bashrc \
+    && rm environment.yml
 
 # export the conda path, since .bashrc is not automatically sourced 
 # when the image is used
