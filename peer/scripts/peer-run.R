@@ -282,7 +282,7 @@ run_peer = function() {
       stringsAsFactors=FALSE, check.names=FALSE)
   } else {
     #dat = read.table(file=f, header=T, sep='\t')
-    dat = data.frame(fread(paste("zcat", f), sep="\t", header=TRUE, 
+    dat = data.frame(fread(paste("gunzip -c", f), sep="\t", header=TRUE, 
         stringsAsFactors=FALSE, showProgress=FALSE, check.names=FALSE), 
         check.names=FALSE)
   }
@@ -304,7 +304,7 @@ run_peer = function() {
   # read in covariates
   if (!is.null(arguments$options$covariate_file)) {
     f2=arguments$options$covariate_file
-    covariates_mtx = data.frame(fread(paste("zcat", f2), sep="\t", 
+    covariates_mtx = data.frame(fread(paste("gunzip -c", f2), sep="\t", 
       header=TRUE, stringsAsFactors=FALSE, 
       showProgress=FALSE, check.names=FALSE), check.names=FALSE)
     # set the row names to covariate ids

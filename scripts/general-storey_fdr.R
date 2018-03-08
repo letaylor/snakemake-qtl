@@ -65,7 +65,7 @@ if (f == 'stdin') {
 } else {
     #dat = read.table(file=f, header=T, sep='\t', stringsAsFactors=FALSE)
     suppressMessages(library(data.table))
-    dat = data.frame(fread(paste("zcat", f), sep="\t", header=TRUE, 
+    dat = data.frame(fread(paste("gunzip -c", f), sep="\t", header=TRUE, 
         stringsAsFactors=FALSE, showProgress=FALSE))
 }
 

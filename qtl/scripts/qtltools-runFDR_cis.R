@@ -19,7 +19,7 @@ cat("  * Output = [", opt_output, "]\n");
 
 #Read data
 cat("\nRead Input data\n");
-D = data.frame(fread(paste("zcat", opt_input), sep="\t", header=T, 
+D = data.frame(fread(paste("gunzip -c", opt_input), sep="\t", header=T, 
     stringsAsFactors=F))
 exon_offset = ifelse(ncol(D) == 19, 0, 2)
 if (exon_offset == 2) cat("  * Gene level correction detected\n")

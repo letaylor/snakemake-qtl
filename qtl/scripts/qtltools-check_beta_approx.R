@@ -10,7 +10,7 @@ try(if(length(args) != 2)
 opt_input  = args[1];
 opt_output = args[2];
 
-d = data.frame(fread(paste("zcat", opt_input), sep="\t", header=T, 
+d = data.frame(fread(paste("gunzip -c", opt_input), sep="\t", header=T, 
     stringsAsFactors=F))
 
 
