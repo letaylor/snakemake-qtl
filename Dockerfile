@@ -1,10 +1,41 @@
-FROM continuumio/miniconda3:latest
+FROM buildpack-deps:artful
 
-# use bash as default shell, rather than sh
+# Set up locales properly
+RUN apt-get update && \
+    apt-get install --yes --no-install-recommends locales && \
+    apt-get purge && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+    locale-gen
+
+ENV LC_ALL en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US.UTF-8
+
+# Use bash as default shell, rather than sh
 ENV SHELL /bin/bash
 
-# set bash as the default entry point
-ENTRYPOINT [ "/bin/bash", "-c" ]
+# run critical system updates ... one could also use the artful-curl pack
+RUN apt-get update && \
+    apt-get install --yes --no-install-recommends \
+        wget bzip2 ca-certificates curl git && \
+    apt-get purge && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# install conda
+ENV CONDA_FILE https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
+RUN echo "export PATH=/opt/conda/bin:$PATH" > /etc/profile.d/conda.sh && \
+    wget --quiet ${CONDA_FILE} -O /tmp/miniconda.sh && \
+    /bin/bash /tmp/miniconda.sh -b -p /opt/conda && \
+    rm /tmp/miniconda.sh && \
+    /opt/conda/bin/conda clean -tipsy
+ENV PATH /opt/conda/bin:$PATH
+
+# alternative conda install (instead of the manual install from above)
+# FROM continuumio/miniconda3:latest
 
 # set up a user, to avoid running containers as root
 ENV NB_USER container_user
@@ -16,42 +47,52 @@ RUN adduser --disabled-password \
 # download things to tmp
 WORKDIR /tmp
 
-# download and install the conda environment
-ENV ENV_FILE https://raw.githubusercontent.com/letaylor/snakemake-qtl/master/environment.yml
-RUN wget ${ENV_FILE} \
-    && conda update conda --yes \
-    && conda env create --name container_env --file environment.yml \
-    && conda clean --all --yes \
-    && conda list --name container_env \
-    && echo 'source activate container_env' >> ${HOME}/.bashrc \
-    && rm environment.yml
+# download the conda environment OR copy from local directory
+RUN wget --quiet https://raw.githubusercontent.com/letaylor/snakemake-qtl/master/environment.yml -O /tmp/environment.yml
+#COPY environment.yml /tmp/environment.yml
 
-# export the conda path, since .bashrc is not automatically sourced 
-# when the image is used
-ENV PATH /opt/conda/envs/container_env/bin:$PATH
-ENV CONDA_DEFAULT_ENV container_env
-ENV CONDA_PREFIX /opt/conda/envs/container_env
+# install conda environment
+# NOTE: conda clean -tipsy
+#   removes everything w/o confirmation (leaves all environments functional).
+RUN conda update conda --yes && \
+    #conda env create --name container_env --file environment.yml && \
+    #conda list --name container_env && \
+    #echo "source activate container_env" >> ${HOME}/.bashrc && \
+    conda env update -v -n root --file /tmp/environment.yml && \
+    conda list --name root && \
+    #conda clean --all --yes && \
+    conda clean -tipsy && \
+    rm /tmp/environment.yml
+
+# export the conda path to force container_env since .bashrc necessarily 
+# sourced when when the image is used
+# ENV PATH /opt/conda/envs/container_env/bin:$PATH
+# ENV CONDA_DEFAULT_ENV container_env
+# ENV CONDA_PREFIX /opt/conda/envs/container_env
 
 # install QTLTools
-RUN wget \
-https://qtltools.github.io/qtltools/binaries/QTLtools_1.1_Ubuntu14.04_x86_64.tar.gz \
-    && tar -zxvf \
+RUN wget --quiet \
+https://qtltools.github.io/qtltools/binaries/QTLtools_1.1_Ubuntu14.04_x86_64.tar.gz && \
+    tar -zxvf \
         QTLtools_1.1_Ubuntu14.04_x86_64.tar.gz \
-        QTLtools_1.1_Ubuntu14.04_x86_64 \
-    && rm QTLtools_1.1_Ubuntu14.04_x86_64.tar.gz \
-    && chmod 755 QTLtools_1.1_Ubuntu14.04_x86_64 \
-    && mv QTLtools_1.1_Ubuntu14.04_x86_64 /bin/QTLtools
+        QTLtools_1.1_Ubuntu14.04_x86_64 && \
+    rm QTLtools_1.1_Ubuntu14.04_x86_64.tar.gz && \
+    chmod 755 QTLtools_1.1_Ubuntu14.04_x86_64 && \
+    mv QTLtools_1.1_Ubuntu14.04_x86_64 /bin/QTLtools
 
 # install veqtl-mapper
-RUN wget https://github.com/funpopgen/veqtl-mapper/releases/download/1.02/veqtl-mapper \
-    && chmod 755 veqtl-mapper \
-    && mv veqtl-mapper /bin/veqtl-mapper
+RUN wget --quiet  https://github.com/funpopgen/veqtl-mapper/releases/download/1.02/veqtl-mapper && \
+    chmod 755 veqtl-mapper && \
+    mv veqtl-mapper /bin/veqtl-mapper
 
 # set wd to user home
 WORKDIR ${HOME}
 
-# clear tmp if there is anything in there... 
+# clear tmp if there is anything in there...
 RUN rm -rf /tmp/*
+
+# set bash as the default entry point
+ENTRYPOINT [ "/bin/bash", "-c" ]
 
 # set the user
 USER ${NB_USER}
