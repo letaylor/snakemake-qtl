@@ -1,0 +1,17 @@
+{
+    # default settings for job on SGE cluster
+    "__default__" :
+    {
+        #"queue"     : "research-rh7", # optional: specify queue to submit to
+        "mem"    : 15, # all jobs default to 15 in Gb
+        "name"      : "snkmk.{rule}.{wildcards}",
+        "output"    : "logs/cluster/{rule}/snkmk.{wildcards}.o",
+        "error"     : "logs/cluster/{rule}/snkmk.{wildcards}.e"
+    },
+    
+    # settings for rules in QTLtools module
+    "vqtlmapper__top_snp" :
+    {
+        "mem"    : 40  # vqtlmapper__top_snp uses 40 Gb
+    }
+}
